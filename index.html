@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2026 하반기 여행 캘린더</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #f5f5f7;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, "Apple SD Gothic Neo", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #1d1d1f;
+  }
+  @keyframes calShimmer { 0% { opacity: .6; } 50% { opacity: 1; } 100% { opacity: .6; } }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  var h = React.createElement;
+
+  // ---- 카테고리 색상 ----
+  var CAT = { '해외여행': '#4A90D9', '워케이션': '#5BB98C', '행사': '#E8A04B' };
+
+  // ---- md 로딩: plans/manifest.json(다중) 우선, 없으면 여행계획.md(단일) ----
+  function loadPlanText() {
+    return fetch('plans/manifest.json', { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('no manifest');
+        return r.json();
+      })
+      .then(function (list) {
+        if (!Array.isArray(list) || !list.length) throw new Error('empty manifest');
+        return Promise.all(list.map(function (f) {
+          return fetch('plans/' + f, { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.text() : ''; })
+            .catch(function () { return ''; });
+        })).then(function (texts) { return texts.join('\n'); });
+      })
+      .catch(function () {
+        return fetch('여행계획.md', { cache: 'no-store' })
+          .then(function (r) { if (!r.ok) throw new Error('not found'); return r.text(); });
+      });
+  }
+
+  function parse(text) {
+    var out = [];
+    var lines = text.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (line.indexOf('- ') !== 0) continue;
+      var parts = line.slice(2).split('|').map(function (s) { return s.trim(); });
+      if (parts.length < 3) continue;
+      if (!/^\d{4}-\d{1,2}-\d{1,2}/.test(parts[0])) continue;
+      var se = parts[0].split('~').map(function (x) { return x.trim(); });
+      var s = se[0], e = se[1] || se[0];
+      var start = toDate(s), end = toDate(e);
+      if (!start || !end) continue;
+      out.push({ start: start, end: end, cat: parts[1], place: parts[2] || '', memo: parts[3] || '' });
+    }
+    return out;
+  }
+  function toDate(str) {
+    var m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str || '');
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  function strip(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+
+  function App() {
+    var st = React.useState({ data: null, error: null });
+    var state = st[0], setState = st[1];
+
+    React.useEffect(function () {
+      loadPlanText()
+        .then(function (t) { setState({ data: parse(t), error: null }); })
+        .catch(function (e) { setState({ data: [], error: String(e) }); });
+    }, []);
+
+    var gridCols = 'repeat(auto-fill,minmax(360px,1fr))';
+    var weekend = true;
+
+    var calendar = state.data ? buildCalendar(state.data, gridCols, weekend) : skeleton(gridCols);
+
+    return h('div', { style: { minHeight: '100vh', background: '#f5f5f7', padding: '48px 0 64px' } },
+      h('div', { style: { maxWidth: '1280px', margin: '0 auto', padding: '0 40px' } },
+        // 헤더 + 범례
+        h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '24px', flexWrap: 'wrap', marginBottom: '32px' } },
+          h('div', null,
+            h('div', { style: { fontSize: '40px', fontWeight: 600, letterSpacing: '-0.5px', lineHeight: '1.1', color: '#1d1d1f' } }, '2026 하반기'),
+            h('div', { style: { fontSize: '17px', letterSpacing: '-0.374px', color: 'rgba(0,0,0,0.5)', marginTop: '8px' } }, '7월 – 12월 · 여행과 리프레시')
+          ),
+          h('div', { style: { display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' } },
+            legend('#4A90D9', '해외여행'),
+            legend('#5BB98C', '워케이션'),
+            legend('#E8A04B', '주요 행사·기념일')
+          )
+        ),
+        // 달력
+        calendar,
+        // 에러/안내
+        state.error
+          ? h('div', { style: { marginTop: '20px', fontSize: '13px', color: '#e0584f' } },
+              '여행계획.md(또는 plans/) 파일을 불러오지 못했습니다. 파일이 같은 폴더에 있는지 확인하세요.')
+          : null,
+        h('div', { style: { marginTop: '28px', fontSize: '12px', letterSpacing: '-0.12px', color: 'rgba(0,0,0,0.32)' } },
+          '일정은 여행계획.md 파일에서 불러옵니다 · 파일을 고치면 달력이 바뀝니다.')
+      )
+    );
+  }
+
+  function legend(color, label) {
+    return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+      h('span', { style: { width: '11px', height: '11px', borderRadius: '3px', background: color, display: 'inline-block' } }),
+      h('span', { style: { fontSize: '13px', letterSpacing: '-0.2px', color: 'rgba(0,0,0,0.7)' } }, label)
+    );
+  }
+
+  function buildCalendar(events, gridCols, weekend) {
+    var months = [6, 7, 8, 9, 10, 11]; // 7월~12월 (0-index)
+    var cards = months.map(function (m) { return monthCard(2026, m, events, weekend); });
+    return h('div', { style: { display: 'grid', gridTemplateColumns: gridCols, gap: '20px' } }, cards);
+  }
+
+  function monthCard(year, month, events, weekend) {
+    var MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    var EN = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var WD = ['일','월','화','수','목','금','토'];
+    var wdColor = function (i) { return weekend && i === 0 ? '#e0584f' : weekend && i === 6 ? '#4A90D9' : 'rgba(0,0,0,0.4)'; };
+
+    var first = new Date(year, month, 1);
+    var startWeekday = first.getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var weeksCount = Math.ceil((startWeekday + daysInMonth) / 7);
+
+    var weeks = [];
+    for (var w = 0; w < weeksCount; w++) {
+      var cells = [];
+      for (var i = 0; i < 7; i++) {
+        var dn = w * 7 + i - startWeekday + 1;
+        cells.push((dn >= 1 && dn <= daysInMonth) ? dn : null);
+      }
+      var segs = [];
+      for (var ei = 0; ei < events.length; ei++) {
+        var ev = events[ei];
+        var cs = null, ce = null;
+        for (var col = 0; col < 7; col++) {
+          var dnn = w * 7 + col - startWeekday + 1;
+          if (dnn < 1 || dnn > daysInMonth) continue;
+          var cur = new Date(year, month, dnn);
+          if (cur >= strip(ev.start) && cur <= strip(ev.end)) {
+            if (cs === null) cs = col;
+            ce = col;
+          }
+        }
+        if (cs !== null) {
+          var startDn = w * 7 + cs - startWeekday + 1;
+          var isStart = new Date(year, month, startDn).getTime() === strip(ev.start).getTime();
+          segs.push({ ev: ev, cs: cs, ce: ce, isStart: isStart });
+        }
+      }
+      segs.sort(function (a, b) { return a.cs - b.cs || (b.ce - b.cs) - (a.ce - a.cs); });
+      var lanes = [];
+      for (var si = 0; si < segs.length; si++) {
+        var s = segs[si];
+        var placed = false;
+        for (var l = 0; l < lanes.length; l++) {
+          if (lanes[l] < s.cs) { s.lane = l; lanes[l] = s.ce; placed = true; break; }
+        }
+        if (!placed) { s.lane = lanes.length; lanes.push(s.ce); }
+      }
+      weeks.push({ cells: cells, segs: segs, laneCount: lanes.length });
+    }
+    var maxLanes = Math.max.apply(null, [1].concat(weeks.map(function (x) { return x.laneCount; })));
+
+    var header = h('div', { key: 'hd', style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '12px' } },
+      h('span', { style: { fontSize: '19px', fontWeight: 600, color: '#1d1d1f', letterSpacing: '-0.3px' } }, MN[month]),
+      h('span', { style: { fontSize: '11px', fontWeight: 600, color: 'rgba(0,0,0,0.3)', letterSpacing: '0.5px' } }, EN[month])
+    );
+
+    var wdRow = h('div', { key: 'wdrow', style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', marginBottom: '6px' } },
+      WD.map(function (d, i) { return h('div', { key: 'wd' + i, style: { textAlign: 'center', fontSize: '11px', fontWeight: 600, color: wdColor(i) } }, d); })
+    );
+
+    var weekEls = weeks.map(function (wk, wi) {
+      var numCells = wk.cells.map(function (d, col) {
+        var color = '#1d1d1f';
+        if (d === null) color = 'transparent';
+        else if (weekend && col === 0) color = '#e0584f';
+        else if (weekend && col === 6) color = '#4A90D9';
+        return h('div', { key: 'n' + col, style: { gridColumn: (col + 1) + '/' + (col + 2), gridRow: '1', textAlign: 'center', fontSize: '12px', color: color, lineHeight: '20px' } }, d ? String(d) : '');
+      });
+      var barEls = wk.segs.map(function (s, si) {
+        var color = CAT[s.ev.cat] || '#9CA3AF';
+        var isEvent = s.ev.cat === '행사';
+        var label = isEvent ? s.ev.place : (s.ev.memo ? s.ev.place + ' · ' + s.ev.memo : s.ev.place);
+        var titleTxt = s.ev.place + (s.ev.memo ? ' · ' + s.ev.memo : '');
+        return h('div', { key: 'b' + si, title: titleTxt, style: { gridColumn: (s.cs + 1) + '/' + (s.ce + 2), gridRow: String(s.lane + 2), background: color, color: '#fff', fontSize: '11px', fontWeight: 600, borderRadius: '5px', padding: '0 6px', margin: '0 2px', height: '17px', lineHeight: '17px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' } }, s.isStart ? label : '');
+      });
+      return h('div', { key: 'w' + wi, style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: '20px repeat(' + maxLanes + ',19px)', rowGap: '2px', marginBottom: '3px' } }, numCells.concat(barEls));
+    });
+
+    return h('div', { key: 'm' + month, style: { background: '#fff', borderRadius: '16px', padding: '16px 16px 12px', boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px' } },
+      [header, wdRow].concat(weekEls));
+  }
+
+  function skeleton(gridCols) {
+    var cards = [];
+    for (var i = 0; i < 6; i++) {
+      cards.push(h('div', { key: i, style: { background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px', animation: 'calShimmer 1.4s ease-in-out infinite' } },
+        h('div', { style: { width: '48px', height: '18px', borderRadius: '6px', background: '#ececef', marginBottom: '16px' } }),
+        h('div', { style: { height: '190px', borderRadius: '8px', background: '#f3f3f5' } })
+      ));
+    }
+    return h('div', { style: { display: 'grid', gridTemplateColumns: gridCols, gap: '20px' } }, cards);
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+})();
+</script>
+</body>
+</html>
