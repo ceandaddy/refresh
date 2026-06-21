@@ -1,6 +1,7 @@
 {
   "events": [
     { "start": "2026-06-28", "end": "2026-07-01", "category": "출장", "place": "도쿄", "memo": "techweek" },
+    { "start": "2026-07-18", "end": "2026-07-18", "category": "행사", "place": "안성", "memo": "농구" },
     { "start": "2026-07-28", "end": "2026-07-31", "category": "해외여행", "place": "방콕", "memo": "가족여행" },
     { "start": "2026-08-15", "category": "행사", "place": "광복절", "memo": "" },
     { "start": "2026-08-19", "end": "2026-08-22", "category": "워케이션", "place": "호치민", "memo": "워케이션" },
