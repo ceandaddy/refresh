@@ -1,0 +1,13 @@
+{
+  "events": [
+    { "start": "2026-06-28", "end": "2026-07-01", "category": "출장", "place": "도쿄", "memo": "techweek" },
+    { "start": "2026-07-28", "end": "2026-07-31", "category": "해외여행", "place": "방콕", "memo": "가족여행" },
+    { "start": "2026-08-15", "category": "행사", "place": "광복절", "memo": "" },
+    { "start": "2026-08-19", "end": "2026-08-22", "category": "워케이션", "place": "호치민", "memo": "워케이션" },
+    { "start": "2026-09-24", "end": "2026-09-27", "category": "행사", "place": "추석", "memo": "" },
+    { "start": "2026-10-09", "category": "행사", "place": "한글날", "memo": "" },
+    { "start": "2026-11-10", "end": "2026-11-14", "category": "휴가", "place": "파타야", "memo": "해외여행" },
+    { "start": "2026-12-24", "end": "2026-12-25", "category": "행사", "place": "크리스마스", "memo": "" },
+    { "start": "2026-12-31", "category": "행사", "place": "연말", "memo": "" }
+  ]
+}

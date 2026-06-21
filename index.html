@@ -33,28 +33,32 @@
     '행사': '#E8A04B'
   };
 
-  // ---- md 로딩: 여행계획.md 한 파일만 읽습니다 ----
-  function loadPlanText() {
-    return fetch('여행계획.md', { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('not found'); return r.text(); });
-  }
-
-  function parse(text) {
-    var out = [];
-    var lines = text.split('\n');
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (line.indexOf('- ') !== 0) continue;
-      var parts = line.slice(2).split('|').map(function (s) { return s.trim(); });
-      if (parts.length < 3) continue;
-      if (!/^\d{4}-\d{1,2}-\d{1,2}/.test(parts[0])) continue;
-      var se = parts[0].split('~').map(function (x) { return x.trim(); });
-      var s = se[0], e = se[1] || se[0];
-      var start = toDate(s), end = toDate(e);
-      if (!start || !end) continue;
-      out.push({ start: start, end: end, cat: parts[1], place: parts[2] || '', memo: parts[3] || '' });
-    }
-    return out;
+  // ---- 데이터 로딩: index.html과 같은 폴더의 plan.json 한 파일만 읽습니다 ----
+  function loadPlan() {
+    return fetch('plan.json', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
+      .then(function (j) {
+        var list = Array.isArray(j) ? j : (j.events || []);
+        var events = [];
+        for (var i = 0; i < list.length; i++) {
+          var it = list[i] || {};
+          var start = toDate(it.start);
+          var end = toDate(it.end || it.start);
+          if (!start || !end) continue;
+          events.push({
+            start: start,
+            end: end,
+            cat: String(it.category || it.cat || '').trim(),
+            place: String(it.place || '').trim(),
+            memo: String(it.memo || '').trim()
+          });
+        }
+        return {
+          events: events,
+          title: (!Array.isArray(j) && j.title) ? j.title : null,
+          subtitle: (!Array.isArray(j) && j.subtitle) ? j.subtitle : null
+        };
+      });
   }
   function toDate(str) {
     var m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str || '');
@@ -67,10 +71,17 @@
     var state = st[0], setState = st[1];
 
     React.useEffect(function () {
-      loadPlanText()
-        .then(function (t) { setState({ data: parse(t), error: null }); })
+      loadPlan()
+        .then(function (p) { setState({ data: p.events, error: null, title: p.title, subtitle: p.subtitle }); })
         .catch(function (e) { setState({ data: [], error: String(e) }); });
     }, []);
+
+    var rng = monthRange();
+    var s = rng[0], e = rng[rng.length - 1];
+    var defSubtitle = s.year + '년 ' + (s.month + 1) + '월 – '
+      + (s.year === e.year ? '' : e.year + '년 ') + (e.month + 1) + '월 · 여행과 리프레시';
+    var title = state.title || '여행 캘린더';
+    var subtitle = state.subtitle || defSubtitle;
 
     var gridCols = 'repeat(auto-fill,minmax(360px,1fr))';
     var weekend = true;
@@ -82,8 +93,8 @@
         // 헤더 + 범례
         h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '24px', flexWrap: 'wrap', marginBottom: '32px' } },
           h('div', null,
-            h('div', { style: { fontSize: '40px', fontWeight: 600, letterSpacing: '-0.5px', lineHeight: '1.1', color: '#1d1d1f' } }, '2026 하반기'),
-            h('div', { style: { fontSize: '17px', letterSpacing: '-0.374px', color: 'rgba(0,0,0,0.5)', marginTop: '8px' } }, '7월 – 12월 · 여행과 리프레시')
+            h('div', { style: { fontSize: '40px', fontWeight: 600, letterSpacing: '-0.5px', lineHeight: '1.1', color: '#1d1d1f' } }, title),
+            h('div', { style: { fontSize: '17px', letterSpacing: '-0.374px', color: 'rgba(0,0,0,0.5)', marginTop: '8px' } }, subtitle)
           ),
           h('div', { style: { display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' } },
             legend('#4A90D9', '해외여행'),
@@ -98,10 +109,10 @@
         // 에러/안내
         state.error
           ? h('div', { style: { marginTop: '20px', fontSize: '13px', color: '#e0584f' } },
-              '여행계획.md(또는 plans/) 파일을 불러오지 못했습니다. 파일이 같은 폴더에 있는지 확인하세요.')
+              'plan.json 파일을 불러오지 못했습니다. index.html과 같은 폴더에 plan.json이 있는지 확인하세요.')
           : null,
         h('div', { style: { marginTop: '28px', fontSize: '12px', letterSpacing: '-0.12px', color: 'rgba(0,0,0,0.32)' } },
-          '일정은 여행계획.md 파일에서 불러옵니다 · 파일을 고치면 달력이 바뀝니다.')
+          '일정은 plan.json 파일에서 불러옵니다 · 파일을 고치면 달력이 바뀝니다.')
       )
     );
   }
@@ -113,9 +124,20 @@
     );
   }
 
+  // 이번 달부터 6개월(연도 경계 자동 처리)
+  function monthRange() {
+    var now = new Date();
+    var baseY = now.getFullYear(), baseM = now.getMonth();
+    var list = [];
+    for (var k = 0; k < 6; k++) {
+      var mm = baseM + k;
+      list.push({ year: baseY + Math.floor(mm / 12), month: ((mm % 12) + 12) % 12 });
+    }
+    return list;
+  }
+
   function buildCalendar(events, gridCols, weekend) {
-    var months = [6, 7, 8, 9, 10, 11]; // 7월~12월 (0-index)
-    var cards = months.map(function (m) { return monthCard(2026, m, events, weekend); });
+    var cards = monthRange().map(function (ym) { return monthCard(ym.year, ym.month, events, weekend); });
     return h('div', { style: { display: 'grid', gridTemplateColumns: gridCols, gap: '20px' } }, cards);
   }
 
@@ -197,7 +219,7 @@
       return h('div', { key: 'w' + wi, style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: '20px repeat(' + maxLanes + ',19px)', rowGap: '2px', marginBottom: '3px' } }, numCells.concat(barEls));
     });
 
-    return h('div', { key: 'm' + month, style: { background: '#fff', borderRadius: '16px', padding: '16px 16px 12px', boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px' } },
+    return h('div', { key: 'm' + year + '-' + month, style: { background: '#fff', borderRadius: '16px', padding: '16px 16px 12px', boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px' } },
       [header, wdRow].concat(weekEls));
   }
 
