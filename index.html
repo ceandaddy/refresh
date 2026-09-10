@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2026 하반기 여행 캘린더</title>
+<title>follow up &amp; schedule</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -33,86 +33,98 @@
     '행사': '#E8A04B'
   };
 
-  // ---- 데이터 로딩: index.html과 같은 폴더의 plan.json 한 파일만 읽습니다 ----
-  function loadPlan() {
-    return fetch('plan.json', { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('not found'); return r.json(); })
-      .then(function (j) {
-        var list = Array.isArray(j) ? j : (j.events || []);
-        var events = [];
-        for (var i = 0; i < list.length; i++) {
-          var it = list[i] || {};
-          var start = toDate(it.start);
-          var end = toDate(it.end || it.start);
-          if (!start || !end) continue;
-          events.push({
-            start: start,
-            end: end,
-            cat: String(it.category || it.cat || '').trim(),
-            place: String(it.place || '').trim(),
-            memo: String(it.memo || '').trim()
-          });
+  // The server reads only the followup and Schedule sections from Notion.
+  function loadContent() {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 15000);
+    return fetch('/api/notion', { cache: 'no-store', signal: controller.signal })
+      .then(function (r) {
+        if (!r.ok) {
+          if (r.status === 503) throw new Error('Notion 연결 설정이 필요합니다.');
+          throw new Error('내용을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.');
         }
-        return {
-          events: events,
-          title: (!Array.isArray(j) && j.title) ? j.title : null,
-          subtitle: (!Array.isArray(j) && j.subtitle) ? j.subtitle : null
-        };
-      });
+        return r.json();
+      })
+      .then(function (j) {
+        if (!Array.isArray(j.followup) || !Array.isArray(j.events)) {
+          throw new Error('내용을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.');
+        }
+        var events = j.events.map(function (it) {
+          return {
+            start: toDate(it.start), end: toDate(it.end || it.start),
+            cat: String(it.category || ''), place: String(it.place || ''),
+            memo: String(it.memo || '')
+          };
+        }).filter(function (it) { return it.start && it.end && it.end >= it.start; });
+        return { followup: j.followup, events: events, warnings: j.warnings || [] };
+      })
+      .finally(function () { clearTimeout(timer); });
   }
   function toDate(str) {
-    var m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str || '');
-    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str || '');
+    if (!m) return null;
+    var d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] ? d : null;
   }
   function strip(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 
   function App() {
-    var st = React.useState({ data: null, error: null });
+    var st = React.useState({ content: null, error: null });
     var state = st[0], setState = st[1];
 
     React.useEffect(function () {
-      loadPlan()
-        .then(function (p) { setState({ data: p.events, error: null, title: p.title, subtitle: p.subtitle }); })
-        .catch(function (e) { setState({ data: [], error: String(e) }); });
+      var active = true;
+      loadContent()
+        .then(function (content) { if (active) setState({ content: content, error: null }); })
+        .catch(function (err) {
+          if (active) setState({ content: null, error: err.name === 'AbortError'
+            ? '불러오는 데 시간이 걸립니다. 잠시 후 새로고침해 주세요.' : err.message });
+        });
+      return function () { active = false; };
     }, []);
 
     var rng = monthRange();
-    var s = rng[0], e = rng[rng.length - 1];
-    var defSubtitle = s.year + '년 ' + (s.month + 1) + '월 – '
-      + (s.year === e.year ? '' : e.year + '년 ') + (e.month + 1) + '월 · 여행과 리프레시';
-    var title = state.title || '여행 캘린더';
-    var subtitle = state.subtitle || defSubtitle;
+    var first = rng[0], last = rng[rng.length - 1];
+    var subtitle = first.year + '년 ' + (first.month + 1) + '월 – '
+      + (first.year === last.year ? '' : last.year + '년 ') + (last.month + 1) + '월';
+    var gridCols = 'repeat(auto-fit,minmax(min(100%,340px),1fr))';
+    var headingStyle = { margin: 0, fontSize: '32px', fontWeight: 600, letterSpacing: '-0.5px', lineHeight: 1.2 };
+    var mutedStyle = { color: 'rgba(0,0,0,0.5)', fontSize: '15px', lineHeight: 1.6 };
+    var content = state.content;
+    var followup = content
+      ? (content.followup.length
+        ? h('ul', { style: { margin: '20px 0 0', paddingLeft: '24px', fontSize: '17px', lineHeight: 1.8, overflowWrap: 'anywhere' } },
+            content.followup.map(function (item, i) {
+              return h('li', { key: i, style: { paddingLeft: '4px', whiteSpace: 'pre-wrap' } }, item);
+            }))
+        : h('p', { style: mutedStyle }, '등록된 항목이 없습니다.'))
+      : (state.error ? null : h('p', { role: 'status', style: mutedStyle }, '불러오는 중…'));
 
-    var gridCols = 'repeat(auto-fill,minmax(360px,1fr))';
-    var weekend = true;
-
-    var calendar = state.data ? buildCalendar(state.data, gridCols, weekend) : skeleton(gridCols);
-
-    return h('div', { style: { minHeight: '100vh', background: '#f5f5f7', padding: '48px 0 64px' } },
-      h('div', { style: { maxWidth: '1280px', margin: '0 auto', padding: '0 40px' } },
-        // 헤더 + 범례
-        h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '24px', flexWrap: 'wrap', marginBottom: '32px' } },
-          h('div', null,
-            h('div', { style: { fontSize: '40px', fontWeight: 600, letterSpacing: '-0.5px', lineHeight: '1.1', color: '#1d1d1f' } }, title),
-            h('div', { style: { fontSize: '17px', letterSpacing: '-0.374px', color: 'rgba(0,0,0,0.5)', marginTop: '8px' } }, subtitle)
-          ),
-          h('div', { style: { display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' } },
-            legend('#4A90D9', '해외여행'),
-            legend('#5BB98C', '워케이션'),
-            legend('#C2569C', '휴가'),
-            legend('#6B7C93', '출장'),
-            legend('#E8A04B', '행사·기념일')
-          )
+    return h('main', { style: { minHeight: '100vh', padding: '48px 0 64px' } },
+      h('div', { style: { maxWidth: '1280px', margin: '0 auto', padding: '0 clamp(20px,4vw,40px)' } },
+        h('section', { 'aria-labelledby': 'followup-title', style: { marginBottom: '48px' } },
+          h('h1', { id: 'followup-title', style: headingStyle }, 'follow up'),
+          followup,
+          state.error ? h('p', { role: 'alert', style: { fontSize: '15px', lineHeight: 1.6, color: '#b13e36' } }, state.error) : null
         ),
-        // 달력
-        calendar,
-        // 에러/안내
-        state.error
-          ? h('div', { style: { marginTop: '20px', fontSize: '13px', color: '#e0584f' } },
-              'plan.json 파일을 불러오지 못했습니다. index.html과 같은 폴더에 plan.json이 있는지 확인하세요.')
-          : null,
-        h('div', { style: { marginTop: '28px', fontSize: '12px', letterSpacing: '-0.12px', color: 'rgba(0,0,0,0.32)' } },
-          '일정은 plan.json 파일에서 불러옵니다 · 파일을 고치면 달력이 바뀝니다.')
+        h('section', { 'aria-labelledby': 'schedule-title' },
+          h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap', marginBottom: '24px' } },
+            h('div', null,
+              h('h2', { id: 'schedule-title', style: headingStyle }, 'schedule'),
+              h('div', { style: { fontSize: '16px', color: 'rgba(0,0,0,0.5)', marginTop: '8px' } }, subtitle)
+            ),
+            h('div', { style: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' } },
+              legend('#4A90D9', '해외여행'), legend('#5BB98C', '워케이션'),
+              legend('#C2569C', '휴가'), legend('#6B7C93', '출장'), legend('#E8A04B', '행사·기념일')
+            )
+          ),
+          content ? buildCalendar(content.events, gridCols, true)
+            : (state.error ? h('p', { style: mutedStyle }, '일정을 표시하려면 연결을 확인한 뒤 새로고침해 주세요.') : skeleton(gridCols)),
+          content && content.warnings.length
+            ? h('p', { role: 'status', style: { marginTop: '20px', fontSize: '14px', color: '#966318', lineHeight: 1.6 } },
+                content.warnings.join(' '))
+            : null
+        )
       )
     );
   }
@@ -124,12 +136,12 @@
     );
   }
 
-  // 이번 달부터 6개월(연도 경계 자동 처리)
+  // 이번 달부터 3개월(연도 경계 자동 처리)
   function monthRange() {
     var now = new Date();
     var baseY = now.getFullYear(), baseM = now.getMonth();
     var list = [];
-    for (var k = 0; k < 6; k++) {
+    for (var k = 0; k < 3; k++) {
       var mm = baseM + k;
       list.push({ year: baseY + Math.floor(mm / 12), month: ((mm % 12) + 12) % 12 });
     }
@@ -194,7 +206,7 @@
 
     var header = h('div', { key: 'hd', style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '12px' } },
       h('span', { style: { fontSize: '19px', fontWeight: 600, color: '#1d1d1f', letterSpacing: '-0.3px' } }, MN[month]),
-      h('span', { style: { fontSize: '11px', fontWeight: 600, color: 'rgba(0,0,0,0.3)', letterSpacing: '0.5px' } }, EN[month])
+      h('span', { style: { fontSize: '11px', fontWeight: 600, color: 'rgba(0,0,0,0.3)', letterSpacing: '0.5px' } }, year + ' · ' + EN[month])
     );
 
     var wdRow = h('div', { key: 'wdrow', style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', marginBottom: '6px' } },
@@ -225,7 +237,7 @@
 
   function skeleton(gridCols) {
     var cards = [];
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 3; i++) {
       cards.push(h('div', { key: i, style: { background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px', animation: 'calShimmer 1.4s ease-in-out infinite' } },
         h('div', { style: { width: '48px', height: '18px', borderRadius: '6px', background: '#ececef', marginBottom: '16px' } }),
         h('div', { style: { height: '190px', borderRadius: '8px', background: '#f3f3f5' } })

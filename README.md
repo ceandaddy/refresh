@@ -1,47 +1,60 @@
-# 2026 하반기 여행 캘린더
+# follow up & schedule
 
-`plan.json` 한 파일을 읽어 7~12월 달력에 일정을 표시하는 정적 웹앱입니다. `plan.json`은 `index.html`과 **같은 폴더**에 둡니다. 빌드 과정이 없어 폴더 그대로 배포하면 동작합니다.
+Notion의 **followup** 영역을 상단 글머리표 목록으로, **Schedule** 영역을 하단 달력으로 표시합니다.
 
-## 일정 추가/수정 방법
+달력 범위는 방문자의 현재 날짜가 속한 달부터 **3개월**입니다. 예를 들어 2026년 9월에는 9~11월, 12월에는 2026년 12월~2027년 2월을 표시합니다. 해당 월 안의 일정은 지난 날짜를 포함해 표시합니다.
 
-`plan.json` 파일만 고치면 됩니다. (이 파일 하나가 달력의 유일한 데이터 소스입니다.)
+## 구성
 
-구조:
+- `index.html`: React로 목록과 달력을 표시합니다.
+- `api/notion.js`: Vercel 서버에서 Notion 페이지를 읽습니다.
+- `lib/notion-content.js`: 두 제목 아래 텍스트를 목록과 일정으로 변환합니다.
+- `plan.json`과 `plans/`는 기존 자료로 남아 있지만 화면에서 읽지 않습니다.
 
-```json
-{
-  "title": "2026 하반기",
-  "subtitle": "7월 – 12월 · 여행과 리프레시",
-  "events": [
-    { "start": "2026-07-28", "end": "2026-07-31", "category": "해외여행", "place": "방콕", "memo": "가족여행" },
-    { "start": "2026-08-15", "category": "행사", "place": "광복절" }
-  ]
-}
+추가 라이브러리 설치나 빌드 과정은 필요 없습니다. **Notion API를 호출하는 서버 기능이 있으므로 GitHub Pages나 단순 파일 열기만으로는 동작하지 않습니다.**
+
+## Vercel에서 한 번 설정하기
+
+1. [Notion 연결 관리](https://www.notion.so/profile/integrations)에서 이 사이트용 Internal connection을 만들고 **Read content** 권한을 부여합니다.
+2. Notion의 **FollowUp** 페이지에서 연결을 추가해 페이지 읽기를 허용합니다. 페이지 자체를 웹에 공개할 필요는 없습니다.
+3. 기존 Vercel `refresh` 프로젝트의 **Settings → Environment Variables**에 다음 값을 추가합니다.
+   - `NOTION_TOKEN`: 위 연결의 API 인증키. **Production**에 적용합니다. Preview 배포에서도 확인하려면 Preview에도 적용합니다.
+   - `NOTION_PAGE_ID`: 선택 사항. 기본값은 `3befd6b6-3b07-80fd-9c0f-fc14838a1d87`입니다.
+4. Vercel 설정은 **Framework Preset: Other**, **Build Command: 비움**, **Output Directory: 기본값**을 사용합니다. 기존 환경변수 변경 후에는 **Redeploy**하여 적용합니다.
+5. 웹사이트를 새로고침해 목록과 일정을 확인합니다. `/api/notion`이 200 응답으로 `followup`, `events`, `warnings`를 반환하면 연결된 상태입니다.
+
+ChatGPT의 Notion 연결과 배포된 웹사이트의 인증키 설정은 별개입니다. 인증키를 HTML, GitHub 또는 대화에 붙여 넣지 마세요. 실제 키는 Vercel 환경변수에만 저장합니다.
+
+이 API는 위 페이지의 두 영역만 반환합니다. 웹사이트에 접근 가능한 사람에게 해당 두 영역의 내용이 표시됩니다.
+
+## Notion 작성 형식
+
+두 영역은 Notion의 제목 블록(제목 1, 2, 3)으로 구분합니다. 제목은 대소문자를 구분하지 않으며 `followup`과 `follow up` 모두 지원합니다. 같은 단계 또는 상위 단계의 다른 제목을 만나면 해당 영역 읽기를 끝냅니다.
+
+### followup
+
+제목 아래 글머리표 또는 일반 텍스트를 작성합니다. 순서와 내용을 유지해 화면의 글머리표로 표시합니다.
+
+### Schedule
+
+한 글머리표에 일정 하나를 작성합니다. 현재 작성한 중괄호 없는 형식과 아래 JSON 객체 형식을 모두 지원합니다.
+
+```text
+"start": "2026-11-03", "end": "2026-11-07", "category": "휴가", "place": "파타야", "memo": "해외여행"
 ```
 
-- 하루 일정이면 `end`는 생략 가능
-- `category`는 아래 5가지 중 하나:
-  - `해외여행` (파랑) · `워케이션` (초록) · `휴가` (자홍) · `출장` (회청) · `행사` (주황)
-- `memo`는 생략 가능
-- `title` / `subtitle`도 생략 가능 (생략 시 기본값 사용)
+- `start`: 필수, `YYYY-MM-DD` 형식.
+- `end`: 선택, 생략하면 하루 일정. 종료일도 일정에 포함됩니다.
+- `category`: 필수. `해외여행`, `워케이션`, `휴가`, `출장`, `행사`는 기존 색상을 사용하고 다른 분류는 회색으로 표시합니다.
+- `place`: 필수, 달력에 표시할 이름.
+- `memo`: 선택, 보조 설명.
 
-> 참고: 달력은 **접속한 달부터 6개월**을 표시합니다(연도 경계 자동 처리). 예) 2026년 6월에 열면 2026년 6월–11월. 그 범위 밖 날짜의 일정은 표시되지 않습니다. 헤더 부제는 보이는 범위에 맞춰 자동으로 바뀝니다. (`plan.json`에 `title`/`subtitle`을 넣으면 고정 문구로 덮어쓸 수 있습니다.)
+잘못된 날짜나 형식의 일정은 제외하고 화면에 해당 항목 번호를 안내합니다. Notion 연결 실패는 별도로 표시하며 이전 파일 데이터로 대체하지 않습니다.
 
-## Vercel 배포 (GitHub 연동 — 추천)
+Notion 내용을 수정한 뒤 웹사이트를 새로고침하면 다시 읽습니다. 화면을 열어둔 상태에서 자동 갱신하지 않습니다.
 
-1. GitHub에 새 저장소를 만들고 이 폴더의 파일을 모두 올립니다.
-2. [vercel.com/new](https://vercel.com/new) 에서 그 저장소를 Import 합니다.
-3. Framework Preset은 **Other**(정적), Build Command 비움, Output Directory 비움(또는 `.`)으로 두고 Deploy.
-4. 배포 완료 후 발급된 URL이 여러분의 여행 캘린더 주소입니다.
+## 검증
 
-이후에는 GitHub에서 `plan.json`만 수정하면 Vercel이 자동으로 재배포합니다.
+Node.js 22 이상에서 `node --test tests/*.test.js`로 파서와 API의 응답 처리를 검증할 수 있습니다.
 
-### 대안: Vercel CLI
-
-```
-npm i -g vercel
-cd 이폴더
-vercel --prod
-```
-
-명령 실행 시 안내에 따라 로그인하면 배포됩니다. (업데이트할 때마다 `vercel --prod` 재실행)
+공식 참고: [Notion API](https://developers.notion.com/), [인증키 관리](https://developers.notion.com/guides/get-started/handling-api-keys), [Vercel Functions](https://vercel.com/docs/functions).
